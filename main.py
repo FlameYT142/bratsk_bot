@@ -8,7 +8,7 @@ from config import BOT_TOKEN, ADMIN_ID
 from database import init_db, DB_PATH
 from keyboards import get_main_menu_kb, get_my_profile_kb, get_new_user_kb
 
-bot = Bot(token=9168726092:AAFiZen2ib0q7aWldD_MVJT8cX2f1H7ISoc)
+bot = Bot(token="9168726092:AAFiZen2ib0q7aWldD_MVJT8cX2f1H7ISoc")
 dp = Dispatcher()
 
 @dp.message(CommandStart())
