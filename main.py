@@ -2,7 +2,7 @@ import asyncio
 import aiosqlite
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardRemove
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 
 from config import BOT_TOKEN, ADMIN_ID
@@ -45,6 +45,22 @@ async def show_main_menu(message: Message):
                          "1. Смотреть анкеты.\n2. Моя анкета.\n3. Я больше не хочу никого искать.\n***\n"
                          "4. Поднять в топ 🚀", reply_markup=get_main_menu_kb())
 
+@dp.message(F.text == "2 👤 Моя анкета")
+async def show_my_profile(message: Message):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT name, age, district, photos, description FROM users WHERE user_id = ?", (message.from_user.id,)) as cursor:
+            user = await cursor.fetchone()
+    if not user:
+        await message.answer("Анкета не найдена.")
+        return
+    name, age, district, photos, description = user
+    photo_id = photos.split(',')[0] if photos else None
+    text = f"Так выглядит твоя анкета:\n\n<b>{name}, {age}, {district}</b>\n{description or ''} ❤️"
+    if photo_id:
+        await message.answer_photo(photo=photo_id, caption=text, parse_mode="HTML", reply_markup=get_my_profile_kb())
+    else:
+        await message.answer(text, parse_mode="HTML", reply_markup=get_my_profile_kb())
+
 # ================= РЕГИСТРАЦИЯ (FSM) =================
 @dp.message(F.text == "📝 Создать анкету")
 async def start_registration(message: Message, state: FSMContext):
@@ -67,7 +83,6 @@ async def reg_age(message: Message, state: FSMContext):
     await message.answer("Выбери свой район:", reply_markup=get_districts_kb())
     await state.set_state(Registration.district)
 
-# Выбор района (1 уровень - группа)
 @dp.callback_query(Registration.district, F.data.startswith("dist_group_"))
 async def reg_district_group(callback: CallbackQuery):
     group = callback.data.replace("dist_group_", "")
@@ -100,7 +115,6 @@ async def reg_district_group(callback: CallbackQuery):
     await callback.message.edit_text("Выбери точное место:", reply_markup=kb)
     await callback.answer()
 
-# Выбор района (2 уровень - сам район)
 @dp.callback_query(Registration.district, F.data.startswith("district_"))
 async def reg_district_final(callback: CallbackQuery, state: FSMContext):
     district = callback.data.replace("district_", "")
@@ -110,7 +124,6 @@ async def reg_district_final(callback: CallbackQuery, state: FSMContext):
     await state.set_state(Registration.subcultures)
     await callback.answer()
 
-# Выбор субкультур
 @dp.callback_query(Registration.subcultures, F.data.startswith("sub_"))
 async def reg_subcultures(callback: CallbackQuery, state: FSMContext):
     if callback.data == "sub_done":
@@ -139,7 +152,6 @@ async def reg_subcultures(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_reply_markup(reply_markup=get_subcultures_kb(selected))
     await callback.answer()
 
-# Фото
 @dp.message(Registration.photo, F.photo)
 async def reg_photo(message: Message, state: FSMContext):
     data = await state.get_data()
@@ -167,15 +179,14 @@ async def reg_desc(message: Message, state: FSMContext):
     await message.answer("Укажи свой пол:", reply_markup=get_gender_kb())
     await state.set_state(Registration.gender)
 
-# Пол
 @dp.callback_query(Registration.gender, F.data.startswith("gender_"))
 async def reg_gender(callback: CallbackQuery, state: FSMContext):
     gender = callback.data.replace("gender_", "")
     await state.update_data(gender=gender)
     await callback.message.edit_text("Кого ты хочешь найти?", reply_markup=get_looking_for_kb(gender))
+    await state.set_state(Registration.looking_for)
     await callback.answer()
 
-# Кого ищет + Подтверждение
 @dp.callback_query(Registration.looking_for, F.data.startswith("look_"))
 async def reg_looking(callback: CallbackQuery, state: FSMContext):
     look = callback.data.replace("look_", "")
@@ -193,7 +204,6 @@ async def reg_looking(callback: CallbackQuery, state: FSMContext):
     await state.set_state(Registration.confirm)
     await callback.answer()
 
-# Сохранение анкеты
 @dp.callback_query(Registration.confirm, F.data == "confirm_yes")
 async def reg_save(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
@@ -217,7 +227,7 @@ async def reg_restart(callback: CallbackQuery, state: FSMContext):
     await start_registration(callback.message, state)
     await callback.answer()
 
-# --- Заглушки для остальных кнопок ---
+# ================= ЗАГЛУШКИ =================
 @dp.message(F.text.in_({"1 🔍 Смотреть анкеты", "4 🚀 Поднять в топ", "5 ⭐ Поднять в топ", "2 📝 Заполнить заново", "3 🖼 Изменить фото", "4 ✏️ Изменить текст", "3 🚪 Я больше не хочу никого искать"}))
 async def stub_actions(message: Message):
     await message.answer("⏳ Эта функция появится в следующем шаге.")
