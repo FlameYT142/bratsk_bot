@@ -218,6 +218,33 @@ async def reg_save(callback: CallbackQuery, state: FSMContext):
         await db.commit()
 
     await callback.message.answer("✅ Анкета отправлена на проверку! Ожидай одобрения.")
+    
+    admin_text = (f"🆕 <b>Новая анкета на проверку!</b>\n\n"
+                  f"<b>Имя:</b> {data['name']}\n"
+                  f"<b>Возраст:</b> {data['age']}\n"
+                  f"<b>Район:</b> {data['district']}\n"
+                  f"<b>Субкультуры:</b> {', '.join(data['subcultures'])}\n"
+                  f"<b>Пол:</b> {data['gender']}\n"
+                  f"<b>Ищет:</b> {data['looking_for']}\n"
+                  f"<b>О себе:</b> {data['description'] or '—'}\n\n"
+                  f"<b>Telegram:</b> @{callback.from_user.username or 'нет username'}")
+    
+    admin_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Одобрить", callback_data=f"approve_{callback.from_user.id}")],
+        [InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_{callback.from_user.id}")]
+    ])
+
+    try:
+        await bot.send_photo(
+            chat_id=ADMIN_ID,
+            photo=data['photos'][0],
+            caption=admin_text,
+            parse_mode="HTML",
+            reply_markup=admin_kb
+        )
+    except Exception as e:
+        print(f"Ошибка отправки админу: {e}")
+
     await state.clear()
     await callback.answer()
 
@@ -226,6 +253,37 @@ async def reg_restart(callback: CallbackQuery, state: FSMContext):
     await callback.message.delete()
     await start_registration(callback.message, state)
     await callback.answer()
+
+# ================= МОДЕРАЦИЯ =================
+@dp.callback_query(F.data.startswith("approve_"))
+async def approve_user(callback: CallbackQuery):
+    user_id = int(callback.data.replace("approve_", ""))
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE users SET is_approved = 1 WHERE user_id = ?", (user_id,))
+        await db.commit()
+    
+    await callback.message.edit_caption(caption=callback.message.caption + "\n\n✅ <b>ОДОБРЕНО</b>", parse_mode="HTML")
+    await callback.answer("Анкета одобрена!")
+    
+    try:
+        await bot.send_message(user_id, "🎉 Твоя анкета одобрена! Теперь ты можешь искать людей.\nНапиши /start, чтобы открыть меню.", reply_markup=get_main_menu_kb())
+    except:
+        pass
+
+@dp.callback_query(F.data.startswith("reject_"))
+async def reject_user(callback: CallbackQuery):
+    user_id = int(callback.data.replace("reject_", ""))
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
+        await db.commit()
+    
+    await callback.message.edit_caption(caption=callback.message.caption + "\n\n❌ <b>ОТКЛОНЕНО (УДАЛЕНО)</b>", parse_mode="HTML")
+    await callback.answer("Анкета отклонена и удалена.")
+    
+    try:
+        await bot.send_message(user_id, "❌ Твоя анкета отклонена. Ты можешь попробовать заполнить её заново, нажав /start.")
+    except:
+        pass
 
 # ================= ЗАГЛУШКИ =================
 @dp.message(F.text.in_({"1 🔍 Смотреть анкеты", "4 🚀 Поднять в топ", "5 ⭐ Поднять в топ", "2 📝 Заполнить заново", "3 🖼 Изменить фото", "4 ✏️ Изменить текст", "3 🚪 Я больше не хочу никого искать"}))
